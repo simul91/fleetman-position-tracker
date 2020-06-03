@@ -3,7 +3,7 @@
 - hosts: localhost
 
   vars:
-     region: us-east-2b
+     region: us-east-2
      instance_type: t2.micro
      base_image_name: ami-083ebc5a49573896a
      number_of_instances_to_create: 1
