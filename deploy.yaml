@@ -1,53 +1,48 @@
-# Test script for integration of Jenkins and Ansible
+# Provision an EC2 instance
 
 - hosts: localhost
-
   vars:
-     region: us-east-2
-     instance_type: t2.micro
-     base_image_name: ami-083ebc5a49573896a
-     number_of_instances_to_create: 1
-
+    region: us-east-2
+    instance_type: m5ad.large
+    base_image: ami-097834fcb3081f51a
+    number_of_instances_to_create: 2
   tasks:
-
-    - name: Setup variables for later use
-      set_fact:
-         region: "{{ region }}"
-
+    - name: delete existing password file
+      file:
+         path: ./jenkinsPassword.txt
+         state: absent
     - name: Create a suitable set of firewall rules
       ec2_group:
          name: jenkins_server_security_groups
          description: Specific rules for a Jenkins Instance
          region: "{{ region }}"
          rules_egress:
-            - proto: tcp
-              from_port: 0
-              to_port: 65535
-              cidr_ip: 0.0.0.0/0
+             - proto: tcp
+               from_port: 0
+               to_port: 65535
+               cidr_ip: 0.0.0.0/0
          rules:
-            - proto: tcp
-              from_port: 22
-              to_port: 22
-              cidr_ip: 0.0.0.0/0
-
-            - proto: tcp
-              from_port: 8080
-              to_port: 8080
-              cidr_ip: 0.0.0.0/0
-
-    - name: Start up an EC2 Temporary Instance
+             - proto: tcp
+               from_port: 22
+               to_port: 22
+               cidr_ip: 0.0.0.0/0
+             - proto: tcp
+               from_port: 8080
+               to_port: 8080
+               cidr_ip: 0.0.0.0/0
+    - name: Start up an EC2 Instance
       ec2:
         key_name: microservice-course
         group: jenkins_server_security_groups
         instance_type: "{{ instance_type }}"
-        image: "{{ base_image_name }}"
+        image: "{{ base_image }}"
         wait: yes
         region: "{{ region }}"
         exact_count: "{{ number_of_instances_to_create }}"
         instance_tags:
-          Name: Dummy_Test
+          Name: Jenkins_Server
         count_tag:
-          Name: Dummy_Test
+          Name: Jenkins_Server
       register: ec2
 
     - name: Gather the new ip addresses
@@ -61,32 +56,105 @@
               state: started
       with_items: "{{ ec2.instances }}"
 
-- hosts: new_ec2_instances, tag_Name_Dummy_Test
+- hosts: new_ec2_instances, tag_Name_Jenkins_Server
 
   tasks:
 
-    - name: Hello World, is this Working?
-      debug: msg="Hello? Is this working?"
+    - name: A dummy task to see if dynamic inventory is being found
+      debug: msg="Yes, found the inventory"
 
-    - name: Patch up the server - this will test if we can SSH
+    - name: Ensure Apache is NOT on this server.
+      yum: name=httpd state=absent
+      become: yes
+
+    - name: remove java 7
+      yum: name=java-1.7.0-openjdk state=absent
+      become: yes
+
+    - name: Patch up the server
       yum: name=* state=latest
       become: yes
 
+    - name: Install JDK
+      yum:
+         name: java-1.8.0-openjdk-devel
+         state: latest
+      become: true
 
-- hosts: localhost
+    - name: Use Java8 for Runtime Java
+      alternatives:
+         name: java
+         path: /usr/lib/jvm/jre-1.8.0-openjdk.x86_64/bin/java
+         link: /usr/bin/java
+      become: true
+        
+    - name: Add Jenkins Red Hat Repository
+      yum_repository:
+        name: jenkins
+        description: Jenkins Repo
+        baseurl: https://pkg.jenkins.io/redhat-stable
+      become: yes
 
-  tasks:
+    - name: Add RPM Key
+      rpm_key:
+         key: https://pkg.jenkins.io/redhat-stable/jenkins.io.key
+      become: yes
 
-    - name: All working so destroy the temporary instance
-      ec2:
-        key_name: microservice-course
-        group: jenkins_server_security_groups
-        instance_type: notneeded
-        image: notneeded
-        wait: yes
-        region: "{{ region }}"
-        exact_count: 0
-        instance_tags:
-          Name: Dummy_Test
-        count_tag:
-          Name: Dummy_Test
+    - name: Install Jenkins
+      yum:
+         name: jenkins
+         state: latest
+      become: yes
+
+    - name: Start up Jenkins
+      service:
+         name: jenkins
+         state: started
+         enabled: yes
+      become: yes
+
+    - name: wait for jenkins to start up
+      wait_for: 
+          port: 8080
+          state: started
+          delay: 30
+
+    - name: get jenkin admin password
+      fetch:
+         src: /var/lib/jenkins/secrets/initialAdminPassword
+         dest: ./jenkinsPassword.txt
+         flat: yes
+      become: yes
+
+    
+    - name: install git 
+      yum:
+        name: git
+        state: latest
+      become: yes
+   
+    - name: Prepare Maven Directory
+      file:
+         path: /opt
+         state: directory
+      become: true
+
+    - name: Download Maven
+      get_url:
+         url: https://www.apache.org/dist/maven/maven-3/3.3.9/binaries/apache-maven-3.3.9-bin.tar.gz
+         dest: /opt/maven3.tar.gz
+      become: true
+
+    - name: Unpack Maven
+      unarchive:
+         remote_src: yes
+         src: /opt/maven3.tar.gz
+         dest: /opt/
+      become: true
+
+    - name: Set Mvn command
+      alternatives:
+         name: mvn
+         path: /opt/apache-maven-3.3.9/bin/mvn
+         link: /usr/bin/mvn
+      become: true
