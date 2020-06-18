@@ -25,7 +25,7 @@ pipeline {
                    withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', accessKeyVariable: 'AWS_ACCESS_KEY_ID', credentialsId: 'awscredential', secretKeyVariable: 'AWS_SECRET_ACCESS_KEY']])
                    {
                   // some block
-                      ansiblePlaybook credentialsId: 'ssh-credentials', installation: 'ansible-installation', playbook: 'deploy.yaml'
+                      ansiblePlaybook credentialsId: 'ssh-credentials', disableHostKeyChecking: true, installation: 'ansible-installation', playbook: 'deploy.yaml'
 }
                 }
              }
