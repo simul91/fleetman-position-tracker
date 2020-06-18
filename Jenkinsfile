@@ -24,6 +24,11 @@ pipeline {
                archiveArtifacts 'target/*.jar'
             }
          }
+         Stage('Deploy')
+         {
+            ansiblePlaybook credentialsId: 'ssh-credentials', installation: 'ansible-installation', playbook: 'deploy.yaml'
+         }
+
       }
    }
 }
